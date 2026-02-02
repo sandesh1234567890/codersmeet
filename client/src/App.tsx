@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Peer from 'peerjs';
+import Peer from 'peerjs'; // Vercel Redeps v1
 import {
     Video,
     VideoOff,

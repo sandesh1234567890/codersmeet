@@ -12,7 +12,7 @@ const peerToRoom = new Map();
 // Map of roomId -> presenterPeerId
 const presenters = new Map();
 
-const PORT = 3040;
+const PORT = process.env.PORT || 3040;
 
 const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Signaling server running on port ${PORT}`);
