@@ -39,7 +39,9 @@ const SCREEN_CONSTRAINTS = {
 
 const PEER_PORT = 3040;
 const PEER_HOST = window.location.hostname;
-const SIGNALING_URL = (import.meta as any).env.VITE_SIGNALING_URL || `http://${PEER_HOST}:${PEER_PORT}`;
+// HARD FALLBACK: Your specific Render URL to ensure it works even if ENV is missing
+const RENDER_URL = "https://codersmeet-bk.onrender.com";
+const SIGNALING_URL = (import.meta as any).env.VITE_SIGNALING_URL || (PEER_HOST.includes('localhost') ? `http://${PEER_HOST}:${PEER_PORT}` : RENDER_URL);
 
 // Helper to parse PeerJS config from URL
 const getPeerConfig = () => {
@@ -529,7 +531,7 @@ function App() {
     return (
         <div className="app-container" data-layout={isFocusActive ? 'presentation' : 'grid'}>
             {/* Diagnostic Banner for Debugging */}
-            {(!isPeerReady || peerError) && isJoined && (
+            {(!isPeerReady || peerError) && (
                 <div style={{
                     position: 'fixed', top: 10, left: '50%', transform: 'translateX(-50%)',
                     background: peerError ? 'rgba(234, 67, 53, 0.95)' : 'rgba(66, 133, 244, 0.95)',
