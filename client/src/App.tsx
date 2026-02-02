@@ -41,6 +41,27 @@ const PEER_PORT = 3040;
 const PEER_HOST = window.location.hostname;
 const SIGNALING_URL = (import.meta as any).env.VITE_SIGNALING_URL || `http://${PEER_HOST}:${PEER_PORT}`;
 
+// Helper to parse PeerJS config from URL
+const getPeerConfig = () => {
+    try {
+        const url = new URL(SIGNALING_URL);
+        const isSecure = url.protocol === 'https:';
+        return {
+            host: url.hostname,
+            port: url.port ? parseInt(url.port) : (isSecure ? 443 : 80),
+            secure: isSecure,
+            path: '/peerjs'
+        };
+    } catch (e) {
+        return {
+            host: PEER_HOST,
+            port: PEER_PORT,
+            secure: false,
+            path: '/peerjs'
+        };
+    }
+};
+
 function App() {
     const [myId, setMyId] = useState('');
     const [roomId, setRoomId] = useState('');
@@ -105,10 +126,11 @@ function App() {
 
     // Initialize Peer ONLY once
     useEffect(() => {
+        const pConfig = getPeerConfig();
+        console.log("[PEER] Connecting with config:", pConfig);
+
         const peer = new Peer('', {
-            host: window.location.hostname,
-            port: PEER_PORT,
-            path: '/peerjs',
+            ...pConfig,
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
