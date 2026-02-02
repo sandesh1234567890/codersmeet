@@ -604,23 +604,30 @@ body {
 
   /* Responsive Presentation Mode */
   .presentation-area {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 120px;
-    max-height: calc(100vh - 160px);
+    display: flex !important;
+    flex-direction: column !important;
+    height: calc(100vh - 160px) !important;
+    grid-template-columns: none !important;
+    grid-template-rows: none !important;
+    gap: 8px;
+    padding: 8px;
     overflow: hidden;
   }
 
   .participants-sidebar {
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    height: 120px;
-    padding-bottom: 8px;
+    height: 100px;
+    flex-shrink: 0;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    gap: 8px;
+    padding: 0 0 4px 0;
   }
 
   .participants-sidebar .video-wrapper {
-    width: 160px;
+    width: 140px;
     height: 100%;
-    aspect-ratio: auto;
+    flex-shrink: 0;
+    aspect-ratio: auto !important;
   }
 }
