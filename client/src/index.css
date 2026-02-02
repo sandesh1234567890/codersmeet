@@ -601,4 +601,26 @@ body {
   .video-grid {
     grid-template-columns: 1fr !important;
   }
+
+  /* Responsive Presentation Mode */
+  .presentation-area {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 120px;
+    max-height: calc(100vh - 160px);
+    overflow: hidden;
+  }
+
+  .participants-sidebar {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 120px;
+    padding-bottom: 8px;
+  }
+
+  .participants-sidebar .video-wrapper {
+    width: 160px;
+    height: 100%;
+    aspect-ratio: auto;
+  }
 }
