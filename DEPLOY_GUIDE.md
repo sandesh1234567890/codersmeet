@@ -39,5 +39,18 @@ If you just want to test from your phone **Right Now**, I have started a tunnel 
 
 ---
 
+## ☕ 4. Keeping your Server Awake (Free Tier)
+Render's Free Tier puts your server to "sleep" after 15 minutes of inactivity. This causes a delay when the first person joins a meeting.
+
+**To stay 100% online (Free):**
+1.  Go to [cron-job.org](https://cron-job.org/).
+2.  Create a free account.
+3.  Set up a "Cronjob" to ping your Render URL at the `/ping` path (e.g., `https://your-app.onrender.com/ping`).
+4.  Set the interval to every **10 minutes**.
+
+This "pokes" your server so it never goes to sleep!
+
+---
+
 ## 🛠️ Performance Tip
 For production, consider adding a **TURN server** (like Twilio or Metered.ca) to the PeerJS configuration in `App.tsx` if you find that users behind restrictive corporate firewalls cannot connect.

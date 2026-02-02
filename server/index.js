@@ -26,6 +26,11 @@ const peerServer = ExpressPeerServer(server, {
 
 app.use(peerServer);
 
+// Health check/Ping endpoint to prevent sleep
+app.get('/ping', (req, res) => {
+    res.send('pong');
+});
+
 // Discovery API for room-based mesh topology
 app.get('/rooms', (req, res) => {
     const activeRooms = Array.from(rooms.entries()).map(([id, peers]) => ({
