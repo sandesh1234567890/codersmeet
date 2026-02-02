@@ -80,6 +80,7 @@ function App() {
     const [presenterId, setPresenterId] = useState<string | null>(null);
     const [focusedPeerId, setFocusedPeerId] = useState<string | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'details' | 'people'>('details');
+    const [peerError, setPeerError] = useState<string | null>(null);
 
     const peerRef = useRef<Peer | null>(null);
     const myVideoRef = useRef<HTMLVideoElement>(null);
@@ -147,6 +148,12 @@ function App() {
             setMyId(id);
             setIsPeerReady(true);
             console.log('My Stable Peer ID:', id);
+        });
+
+        peer.on('error', (err) => {
+            console.error('PeerJS Error:', err.type, err);
+            setPeerError(`${err.type}: ${err.message}`);
+            setIsPeerReady(false);
         });
 
         peer.on('call', async (call) => {
@@ -521,7 +528,27 @@ function App() {
 
     return (
         <div className="app-container" data-layout={isFocusActive ? 'presentation' : 'grid'}>
-            <header className="meeting-header">
+            {/* Diagnostic Banner for Debugging */}
+            {(!isPeerReady || peerError) && isJoined && (
+                <div style={{
+                    position: 'fixed', top: 10, left: '50%', transform: 'translateX(-50%)',
+                    background: peerError ? 'rgba(234, 67, 53, 0.95)' : 'rgba(66, 133, 244, 0.95)',
+                    color: 'white', padding: '15px 25px',
+                    borderRadius: '8px', zIndex: 9999, fontSize: '13px', textAlign: 'left',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)', maxWidth: '90%'
+                }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+                        {peerError ? '❌ Connection Error' : '⏳ Connecting to Signaling...'}
+                    </div>
+                    {peerError && <div style={{ marginBottom: '8px', color: '#ffdada' }}>{peerError}</div>}
+                    <div style={{ opacity: 0.9, fontSize: '11px' }}>
+                        URL: {SIGNALING_URL} <br />
+                        Config: {getPeerConfig().host}:{getPeerConfig().port} (Secure: {getPeerConfig().secure ? 'Yes' : 'No'})
+                    </div>
+                </div>
+            )}
+
+            <header className="app-header">
                 <div className="header-left">
                     <div className="room-info" onClick={copyRoomId}>
                         <span className="room-name">{roomId}</span>
