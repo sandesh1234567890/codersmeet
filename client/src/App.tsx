@@ -16,7 +16,8 @@ import {
     Check,
     X,
     Plus,
-    Keyboard
+    Keyboard,
+    Hash
 } from 'lucide-react';
 import './index.css';
 
@@ -426,7 +427,7 @@ function App() {
             <div className="landing-container">
                 <header className="landing-header">
                     <div className="landing-logo">
-                        <div className="logo-icon"><Video size={20} color="white" /></div>
+                        <img src="/logo.png" alt="CodersMeet Logo" />
                         <span>CodersMeet</span>
                     </div>
                     <div className="landing-controls">
@@ -441,9 +442,9 @@ function App() {
 
                 <main className="landing-main">
                     <div className="landing-content">
-                        <h1>Premium video meetings.<br />Built for coders.</h1>
+                        <h1>Professional meetings.<br />Built for engineers.</h1>
                         <p className="subtitle">
-                            Connect, collaborate, and share code from anywhere with CodersMeet. Secure, peer-to-peer, and open.
+                            Connect, collaborate, and share your code with CodersMeet. Fast, secure, and peer-to-peer.
                         </p>
 
                         <div className="landing-actions">
@@ -524,7 +525,7 @@ function App() {
                         )}
 
                         <div className="landing-footer">
-                            <p>Built with ❤️ for the developer community</p>
+                            <p>Handcrafted for the engineering community.</p>
                         </div>
                     </div>
 
@@ -592,9 +593,14 @@ function App() {
 
             <header className={`app-header ${!showControls ? 'hidden' : ''}`}>
                 <div className="header-left">
+                    <div className="landing-logo" style={{ gap: '8px' }}>
+                        <img src="/logo.png" alt="Logo" style={{ height: '28px' }} />
+                        <span style={{ fontSize: '1.2rem', fontWeight: 700 }}>CodersMeet</span>
+                    </div>
+                    <div style={{ width: '1px', height: '20px', background: 'var(--border-muted)', margin: '0 16px' }}></div>
                     <div className="room-info" onClick={copyRoomId}>
+                        <Hash size={16} />
                         <span className="room-name">{roomId}</span>
-                        {copied ? <Check size={16} /> : <Copy size={16} />}
                     </div>
                 </div>
                 <div className="header-right">
