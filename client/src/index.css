@@ -457,6 +457,11 @@ body {
   transform: scaleX(-1);
 }
 
+.video-wrapper.screen-share video {
+  object-fit: contain !important;
+  background: #000;
+}
+
 .initials-avatar {
   position: absolute;
   inset: 0;
@@ -630,4 +635,136 @@ body {
     flex-shrink: 0;
     aspect-ratio: auto !important;
   }
+
+  /* Footer adjustments for mobile */
+  .footer-center {
+    gap: 8px;
+  }
+
+  .circle-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .circle-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .footer-right-actions {
+    gap: 4px;
+  }
+
+  .icon-btn {
+    padding: 8px;
+  }
+}
+
+/* Chat & Settings Styles */
+.chat-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #5f6368;
+  gap: 16px;
+  padding-bottom: 40px;
+}
+
+.chat-placeholder p {
+  font-weight: 500;
+  font-size: 1.1rem;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.setting-item p {
+  font-weight: 500;
+  color: #3c4043;
+}
+
+.toggle {
+  width: 40px;
+  height: 20px;
+  background: #bdc1c6;
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle.active {
+  background: #1a73e8;
+}
+
+.toggle.active::after {
+  transform: translateX(20px);
+}
+
+/* Premium enhancements */
+.landing-header {
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, .3), 0 2px 6px 2px rgba(60, 64, 67, .15);
+  background: white;
+  z-index: 10;
+}
+
+.new-meeting-btn {
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, .302), 0 1px 3px 1px rgba(60, 64, 67, .149);
+  transition: box-shadow 0.2s, background-color 0.2s;
+}
+
+.new-meeting-btn:hover {
+  background: #1765cc;
+  box-shadow: 0 1px 3px 1px rgba(60, 64, 67, .15), 0 4px 8px 3px rgba(60, 64, 67, .15);
+}
+
+.circle-btn {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.badge {
+  box-shadow: 0 0 0 2px var(--bg-dark);
+}
+
+.side-panel .tabs {
+  display: flex;
+  gap: 12px;
+}
+
+.side-panel .tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 0;
+  font-weight: 500;
+  cursor: pointer;
+  color: #5f6368;
+}
+
+.side-panel .tabs button.active {
+  color: #1a73e8;
+  border-bottom-color: #1a73e8;
 }

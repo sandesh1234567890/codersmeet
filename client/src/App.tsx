@@ -70,8 +70,8 @@ function App() {
     const [isJoined, setIsJoined] = useState(false);
     const [peers, setPeers] = useState<{ [key: string]: MediaStream }>({});
     const [myStream, setMyStream] = useState<MediaStream | null>(null);
-    const [isMuted, setIsMuted] = useState(false);
-    const [isVideoOff, setIsVideoOff] = useState(false);
+    const [isMuted, setIsMuted] = useState(true);
+    const [isVideoOff, setIsVideoOff] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [currentTime, setCurrentTime] = useState('');
     const [copied, setCopied] = useState(false);
@@ -81,7 +81,7 @@ function App() {
     const [isPeerReady, setIsPeerReady] = useState(false);
     const [presenterId, setPresenterId] = useState<string | null>(null);
     const [focusedPeerId, setFocusedPeerId] = useState<string | null>(null);
-    const [sidebarTab, setSidebarTab] = useState<'details' | 'people'>('details');
+    const [sidebarTab, setSidebarTab] = useState<'details' | 'people' | 'settings' | 'chat'>('details');
     const [peerError, setPeerError] = useState<string | null>(null);
 
     const peerRef = useRef<Peer | null>(null);
@@ -121,11 +121,22 @@ function App() {
         fetchActiveRooms();
         const roomsInterval = setInterval(fetchActiveRooms, 3000);
 
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (isJoined) {
+                e.preventDefault();
+                e.returnValue = 'Are you sure you want to leave? The meeting will be canceled.';
+                return e.returnValue;
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
         return () => {
             clearInterval(timer);
             clearInterval(roomsInterval);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
         };
-    }, []);
+    }, [isJoined]);
 
     // Initialize Peer ONLY once
     useEffect(() => {
@@ -628,8 +639,12 @@ function App() {
                         <Users size={22} />
                         <span className="badge">{totalParticipants}</span>
                     </button>
-                    <button className="icon-btn"><MessageSquare size={22} /></button>
-                    <button className="icon-btn"><Settings size={22} /></button>
+                    <button className="icon-btn" onClick={() => { setSidebarTab('chat'); setIsSidebarOpen(!isSidebarOpen); }}>
+                        <MessageSquare size={22} />
+                    </button>
+                    <button className="icon-btn" onClick={() => { setSidebarTab('settings'); setIsSidebarOpen(!isSidebarOpen); }}>
+                        <Settings size={22} />
+                    </button>
                 </div>
             </footer>
 
@@ -638,7 +653,9 @@ function App() {
                     <div className="panel-header">
                         <div className="tabs">
                             <button className={sidebarTab === 'details' ? 'active' : ''} onClick={() => setSidebarTab('details')}>Details</button>
-                            <button className={sidebarTab === 'people' ? 'active' : ''} onClick={() => setSidebarTab('people')}>People ({totalParticipants})</button>
+                            <button className={sidebarTab === 'people' ? 'active' : ''} onClick={() => setSidebarTab('people')}>People</button>
+                            <button className={sidebarTab === 'chat' ? 'active' : ''} onClick={() => setSidebarTab('chat')}>Chat</button>
+                            <button className={sidebarTab === 'settings' ? 'active' : ''} onClick={() => setSidebarTab('settings')}>Settings</button>
                         </div>
                         <button className="close-btn" onClick={() => setIsSidebarOpen(false)}><X size={20} /></button>
                     </div>
@@ -654,7 +671,7 @@ function App() {
                                     </div>
                                 </div>
                             </>
-                        ) : (
+                        ) : sidebarTab === 'people' ? (
                             <div className="people-list">
                                 <div className="person-item">
                                     <div className="p-avatar">Y</div>
@@ -672,6 +689,26 @@ function App() {
                                         </button>
                                     </div>
                                 ))}
+                            </div>
+                        ) : sidebarTab === 'chat' ? (
+                            <div className="chat-placeholder">
+                                <MessageSquare size={48} opacity={0.2} />
+                                <p>Chat feature coming soon</p>
+                            </div>
+                        ) : (
+                            <div className="settings-panel">
+                                <div className="setting-item">
+                                    <p>Noise Cancellation</p>
+                                    <div className="toggle"></div>
+                                </div>
+                                <div className="setting-item">
+                                    <p>HD Video</p>
+                                    <div className="toggle active"></div>
+                                </div>
+                                <div className="setting-item">
+                                    <p>Background Blur</p>
+                                    <div className="toggle"></div>
+                                </div>
                             </div>
                         )}
                     </div>
