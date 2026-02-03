@@ -551,7 +551,7 @@ function App() {
                         )}
 
                         <div className="landing-footer">
-                            <p>Handcrafted for the engineering community.</p>
+                            <p>Engineered by <strong>Sandesh Suroshe</strong> for developer community.</p>
                         </div>
                     </div>
 
