@@ -83,12 +83,14 @@ function App() {
     const [focusedPeerId, setFocusedPeerId] = useState<string | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'details' | 'people' | 'settings' | 'chat'>('details');
     const [peerError, setPeerError] = useState<string | null>(null);
+    const [showControls, setShowControls] = useState(true);
 
     const peerRef = useRef<Peer | null>(null);
     const myVideoRef = useRef<HTMLVideoElement>(null);
     const callsRef = useRef<{ [key: string]: any }>({});
     const screenStreamRef = useRef<MediaStream | null>(null);
     const myStreamRef = useRef<MediaStream | null>(null);
+    const controlsTimerRef = useRef<any>(null);
 
     // Sync ref with state
     useEffect(() => {
@@ -137,6 +139,33 @@ function App() {
             window.removeEventListener('beforeunload', handleBeforeUnload);
         };
     }, [isJoined]);
+
+    // Auto-hide controls logic
+    useEffect(() => {
+        if (!isJoined) return;
+
+        const resetTimer = () => {
+            setShowControls(true);
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+
+            // Don't hide if sidebar is open
+            if (isSidebarOpen) return;
+
+            controlsTimerRef.current = setTimeout(() => {
+                setShowControls(false);
+            }, 3000);
+        };
+
+        const activityEvents = ['mousemove', 'mousedown', 'touchstart', 'keydown'];
+        activityEvents.forEach(event => window.addEventListener(event, resetTimer));
+
+        resetTimer();
+
+        return () => {
+            activityEvents.forEach(event => window.removeEventListener(event, resetTimer));
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+        };
+    }, [isJoined, isSidebarOpen]);
 
     // Initialize Peer ONLY once
     useEffect(() => {
@@ -397,23 +426,24 @@ function App() {
             <div className="landing-container">
                 <header className="landing-header">
                     <div className="landing-logo">
-                        <img src="https://www.gstatic.com/meet/google_meet_horizontal_wordmark_2020q4_1x_icon_124_40_2373e79660dabbf194273d26aa74ad1b.png" alt="Google Meet" />
+                        <div className="logo-icon"><Video size={20} color="white" /></div>
+                        <span>CodersMeet</span>
                     </div>
                     <div className="landing-controls">
-                        <span>{currentTime} • Mon, Feb 2</span>
+                        <span>{currentTime}</span>
                         <div className="help-btns">
-                            <Info size={20} />
-                            <MessageSquare size={20} />
-                            <Settings size={20} />
+                            <Info size={20} style={{ cursor: 'pointer' }} />
+                            <MessageSquare size={20} style={{ cursor: 'pointer' }} />
+                            <Settings size={20} style={{ cursor: 'pointer' }} />
                         </div>
                     </div>
                 </header>
 
                 <main className="landing-main">
                     <div className="landing-content">
-                        <h1>Video calls and meetings for everyone</h1>
+                        <h1>Premium video meetings.<br />Built for coders.</h1>
                         <p className="subtitle">
-                            Connect, collaborate, and celebrate from anywhere with Google Meet (P2P).
+                            Connect, collaborate, and share code from anywhere with CodersMeet. Secure, peer-to-peer, and open.
                         </p>
 
                         <div className="landing-actions">
@@ -494,8 +524,7 @@ function App() {
                         )}
 
                         <div className="landing-footer">
-                            <hr />
-                            <p><a href="#">Learn more</a> about Google Meet</p>
+                            <p>Built with ❤️ for the developer community</p>
                         </div>
                     </div>
 
@@ -519,8 +548,8 @@ function App() {
                                 </div>
                             </div>
                             <div className="hero-text">
-                                <h3>Get a link that you can share</h3>
-                                <p>Click <strong>New meeting</strong> to get a link that you can send to people you want to meet with</p>
+                                <h3>Ready to ship?</h3>
+                                <p>Start a <strong>New meeting</strong> and share your repository or screen with your team instantly.</p>
                             </div>
                         </div>
                     </div>
@@ -561,7 +590,7 @@ function App() {
                 </div>
             )}
 
-            <header className="app-header">
+            <header className={`app-header ${!showControls ? 'hidden' : ''}`}>
                 <div className="header-left">
                     <div className="room-info" onClick={copyRoomId}>
                         <span className="room-name">{roomId}</span>
@@ -625,7 +654,7 @@ function App() {
                 )}
             </main>
 
-            <footer className="footer-controls">
+            <footer className={`footer-controls ${!showControls ? 'hidden' : ''}`}>
                 <div className="footer-left-info">{roomId}</div>
                 <div className="footer-center">
                     <button className={`circle-btn ${isMuted ? 'off' : ''}`} onClick={toggleMute}>{isMuted ? <MicOff size={22} /> : <Mic size={22} />}</button>
@@ -661,16 +690,24 @@ function App() {
                     </div>
                     <div className="panel-content">
                         {sidebarTab === 'details' ? (
-                            <>
-                                <p style={{ fontWeight: 500, marginBottom: '8px' }}>Joining info</p>
-                                <div style={{ background: '#f1f3f4', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
-                                    <p style={{ fontSize: '0.9rem', color: '#5f6368', marginBottom: '4px' }}>Room Key</p>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontWeight: 500 }}>{roomId}</span>
-                                        <button onClick={copyRoomId} style={{ background: 'none', border: 'none', color: '#1a73e8', cursor: 'pointer' }}>{copied ? 'Copied' : 'Copy'}</button>
+                            <div className="tab-details">
+                                <div className="detailed-info-card">
+                                    <p>Active Session</p>
+                                    <div className="room-id-copy" onClick={copyRoomId}>
+                                        <span>{roomId}</span>
+                                        <button style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}>
+                                            {copied ? 'Copied' : <Copy size={16} />}
+                                        </button>
                                     </div>
                                 </div>
-                            </>
+                                <div className="detailed-info-card">
+                                    <p>Connection Info</p>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                        Peer-to-Peer Mesh <br />
+                                        Encryption: Standard WebRTC
+                                    </div>
+                                </div>
+                            </div>
                         ) : sidebarTab === 'people' ? (
                             <div className="people-list">
                                 <div className="person-item">
