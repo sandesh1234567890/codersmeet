@@ -4,8 +4,8 @@
   --border-muted: #30363d;
   --text-main: #c9d1d9;
   --text-muted: #8b949e;
-  --accent-primary: #58a6ff;
-  --accent-primary-hover: #79c0ff;
+  --accent-primary: #238636;
+  --accent-primary-hover: #2ea44f;
   --accent-danger: #f85149;
   --accent-danger-hover: #da3633;
   --shadow-premium: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -44,8 +44,8 @@ body {
   flex-direction: column;
   position: relative;
   background-image:
-    radial-gradient(circle at 10% 20%, rgba(88, 166, 255, 0.05) 0%, transparent 40%),
-    radial-gradient(circle at 90% 80%, rgba(88, 166, 255, 0.03) 0%, transparent 40%);
+    radial-gradient(circle at 10% 20%, rgba(35, 134, 54, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(35, 134, 54, 0.03) 0%, transparent 40%);
 }
 
 .landing-header {
@@ -156,7 +156,7 @@ body {
 .new-meeting-btn:hover {
   background: var(--accent-primary-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
 }
 
 .join-group {
@@ -574,6 +574,8 @@ body {
   gap: 16px;
   align-content: center;
   justify-content: center;
+  width: 100%;
+  height: calc(100vh - 144px);
 }
 
 .video-grid[data-count="1"] {
@@ -584,12 +586,36 @@ body {
 
 .video-grid[data-count="2"] {
   grid-template-columns: 1fr 1fr;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .video-grid[data-count="3"],
 .video-grid[data-count="4"] {
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.video-wrapper.local.pip {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 280px;
+  height: auto;
+  aspect-ratio: 16/9;
+  z-index: 1000;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  border: 2px solid var(--accent-primary);
+  background: var(--bg-dark);
+}
+
+.video-wrapper.local.pip .peer-label {
+  bottom: 8px;
+  left: 8px;
+  font-size: 0.7rem;
+  padding: 4px 10px;
 }
 
 /* Footer Controls - Coder Status Bar Style */
@@ -879,9 +905,22 @@ body {
   }
 
   .video-grid {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: 1fr 1fr !important;
     padding: 8px;
     gap: 8px;
+    height: calc(100vh - 136px);
+  }
+
+  .video-grid[data-count="1"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .video-wrapper.local.pip {
+    width: 140px;
+    top: 12px;
+    right: 12px;
+    border-width: 1px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   }
 
   .video-wrapper {

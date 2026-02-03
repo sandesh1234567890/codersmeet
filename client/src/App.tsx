@@ -293,7 +293,33 @@ function App() {
                     pId = data.presenterId;
                 }
 
-                setPresenterId(pId);
+                // Sync current peers with the list from server
+                setPeers(prev => {
+                    const next = { ...prev };
+                    let changed = false;
+
+                    // Remove stale peers
+                    Object.keys(next).forEach(id => {
+                        if (!peerList.includes(id)) {
+                            delete next[id];
+                            if (callsRef.current[id]) {
+                                callsRef.current[id].close();
+                                delete callsRef.current[id];
+                            }
+                            changed = true;
+                        }
+                    });
+
+                    return changed ? next : prev;
+                });
+
+                setPresenterId(prevId => {
+                    // Auto-pin presenter if changed and exists
+                    if (pId && pId !== prevId) {
+                        setFocusedPeerId(pId);
+                    }
+                    return pId;
+                });
 
                 peerList.forEach(id => {
                     // Check established connections via callsRef (source of truth)
@@ -311,7 +337,7 @@ function App() {
         };
 
         await fetchPeers();
-        const pollInterval = setInterval(fetchPeers, 4000);
+        const pollInterval = setInterval(fetchPeers, 3000);
         return () => clearInterval(pollInterval);
     };
 
@@ -608,7 +634,7 @@ function App() {
                 </div>
             </header>
 
-            <main className={isFocusActive ? "presentation-area" : "video-grid"} data-count={totalParticipants}>
+            <main className={isFocusActive ? "presentation-area" : "video-grid"} data-count={isFocusActive ? totalParticipants : peerIds.length}>
                 {isFocusActive ? (
                     <>
                         <div className="primary-presenter">
@@ -642,7 +668,8 @@ function App() {
                     </>
                 ) : (
                     <>
-                        <div className={`video-wrapper local ${isScreenSharing ? 'screen-share' : ''}`} onClick={() => togglePin(myId)}>
+                        {/* If peers exist, show local as small PiP. If alone, show local in full grid. */}
+                        <div className={`video-wrapper local ${peerIds.length > 0 ? 'pip' : ''} ${isScreenSharing ? 'screen-share' : ''}`} onClick={() => togglePin(myId)}>
                             <video ref={myVideoRef} autoPlay muted playsInline style={{ opacity: isVideoOff && !isScreenSharing ? 0 : 1 }} />
                             {isVideoOff && !isScreenSharing && <div className="initials-avatar">{roomId.charAt(0).toUpperCase()}</div>}
                             <div className="peer-label">
