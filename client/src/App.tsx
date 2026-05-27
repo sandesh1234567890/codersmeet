@@ -95,6 +95,13 @@ function App() {
     const [chatInput, setChatInput] = useState('');
     const [unreadCount, setUnreadCount] = useState(0);
     const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+    const [username, setUsername] = useState(() => localStorage.getItem('codersmeet_username') || '');
+    const [nameError, setNameError] = useState(false);
+
+    const usernameRef = useRef(username);
+    useEffect(() => {
+        usernameRef.current = username;
+    }, [username]);
 
     const peerRef = useRef<Peer | null>(null);
     const myVideoRef = useRef<HTMLVideoElement>(null);
@@ -265,7 +272,7 @@ function App() {
                     break;
                 case 'CHAT_MESSAGE':
                     const newMsg = {
-                        sender: senderId,
+                        sender: data.senderName || senderId.substring(0, 6),
                         text: data.text,
                         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         isMe: false
@@ -283,10 +290,10 @@ function App() {
             conn.on('open', () => {
                 console.log("Data connection open with:", conn.peer);
                 dataConnectionsRef.current[conn.peer] = conn;
-                // Send current status
+                // Send current status including username
                 conn.send({
                     type: 'STATUS_UPDATE',
-                    status: { isMuted, isVideoOff, isHandRaised }
+                    status: { isMuted, isVideoOff, isHandRaised, username: usernameRef.current || 'Guest' }
                 });
             });
             conn.on('data', (data: any) => {
@@ -343,7 +350,7 @@ function App() {
     const sendStatusUpdate = () => {
         const payload = {
             type: 'STATUS_UPDATE',
-            status: { isMuted, isVideoOff, isHandRaised }
+            status: { isMuted, isVideoOff, isHandRaised, username: usernameRef.current || 'Guest' }
         };
         Object.values(dataConnectionsRef.current).forEach((conn: any) => {
             conn.send(payload);
@@ -378,7 +385,7 @@ function App() {
         if (!chatInput.trim()) return;
 
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const payload = { type: 'CHAT_MESSAGE', text: chatInput };
+        const payload = { type: 'CHAT_MESSAGE', text: chatInput, senderName: usernameRef.current || 'Guest' };
         
         Object.values(dataConnectionsRef.current).forEach((conn: any) => conn.send(payload));
         
@@ -688,6 +695,11 @@ function App() {
     };
 
     const handleNewMeeting = async () => {
+        if (!username.trim()) {
+            setNameError(true);
+            return;
+        }
+        setNameError(false);
         const newId = generateRoomId();
         setRoomId(newId);
         window.history.pushState({}, '', `?room=${newId}`);
@@ -752,7 +764,14 @@ function App() {
                                 </div>
                                 <button
                                     className="join-text-btn"
-                                    onClick={() => joinRoom()}
+                                    onClick={() => {
+                                        if (!username.trim()) {
+                                            setNameError(true);
+                                            return;
+                                        }
+                                        setNameError(false);
+                                        joinRoom();
+                                    }}
                                     disabled={!roomId || !isPeerReady}
                                 >
                                     Join
@@ -789,6 +808,12 @@ function App() {
                                                 <button
                                                     className="room-join-btn"
                                                     onClick={() => {
+                                                        if (!username.trim()) {
+                                                            setNameError(true);
+                                                            alert("Please enter a display name first!");
+                                                            return;
+                                                        }
+                                                        setNameError(false);
                                                         const key = prompt("Enter Room Key (ID) to join:");
                                                         if (key === room.id) {
                                                             joinRoom(room.id);
@@ -829,6 +854,21 @@ function App() {
                                     <button className={`p-btn ${isMuted ? 'off' : ''}`} onClick={toggleMute}>{isMuted ? <MicOff size={20} /> : <Mic size={20} />}</button>
                                     <button className={`p-btn ${isVideoOff ? 'off' : ''}`} onClick={toggleVideo}>{isVideoOff ? <VideoOff size={20} /> : <Video size={20} />}</button>
                                 </div>
+                            </div>
+                            <div className={`name-input-container ${nameError ? 'error' : ''}`}>
+                                <label className="name-label">Display Name</label>
+                                <input
+                                    type="text"
+                                    placeholder="Enter your name to join"
+                                    value={username}
+                                    onChange={(e) => {
+                                        setUsername(e.target.value);
+                                        localStorage.setItem('codersmeet_username', e.target.value);
+                                        if (e.target.value.trim()) setNameError(false);
+                                    }}
+                                    className="name-input"
+                                />
+                                {nameError && <span className="name-error-msg">Name is required to join</span>}
                             </div>
                             <div className="hero-text">
                                 <h3>Ready to ship?</h3>
@@ -898,12 +938,14 @@ function App() {
                             {effectiveFocusId === myId ? (
                                 <div className="video-wrapper local screen-share" onClick={() => togglePin(null)}>
                                     <video ref={myVideoRef} autoPlay muted playsInline />
-                                    <div className="peer-label">You (Pinned)</div>
+                                    <div className="peer-label">{username || 'You'} (Pinned)</div>
                                 </div>
                             ) : (
                                 <div className="video-wrapper" onClick={() => togglePin(null)}>
                                     <VideoComponent stream={peers[effectiveFocusId!]} isSpeaking={effectiveFocusId === activeSpeakerId} />
-                                    <div className="peer-label">{presenterId ? "Presenting" : (effectiveFocusId === activeSpeakerId && !globalPinnedId) ? "Speaking" : "Pinned"}</div>
+                                    <div className="peer-label">
+                                        {presenterId ? `${peersStatus[effectiveFocusId!]?.username || 'Participant'} (Presenting)` : (effectiveFocusId === activeSpeakerId && !globalPinnedId) ? `${peersStatus[effectiveFocusId!]?.username || 'Participant'} (Speaking)` : `${peersStatus[effectiveFocusId!]?.username || 'Participant'} (Pinned)`}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -911,16 +953,16 @@ function App() {
                             {effectiveFocusId !== myId && (
                                 <div className={`video-wrapper local ${isScreenSharing ? 'screen-share' : ''}`} onClick={() => togglePin(myId)}>
                                     <video ref={myVideoRef} autoPlay muted playsInline style={{ opacity: isVideoOff ? 0 : 1 }} />
-                                    {(isVideoOff && !isScreenSharing) && <div className="initials-avatar">{roomId.charAt(0).toUpperCase()}</div>}
+                                    {(isVideoOff && !isScreenSharing) && <div className="initials-avatar">{(username || 'You').substring(0, 2).toUpperCase()}</div>}
                                     {isHandRaised && <div className="hand-badge">✋</div>}
-                                    <div className="peer-label">You</div>
+                                    <div className="peer-label">{username || 'You'}</div>
                                 </div>
                             )}
                             {peerIds.filter(id => id !== effectiveFocusId).map(id => (
                                 <div key={id} className="video-wrapper" onClick={() => togglePin(id)}>
                                     <VideoComponent stream={peers[id]} status={peersStatus[id]} isSpeaking={id === activeSpeakerId} />
                                     {peersStatus[id]?.isHandRaised && <div className="hand-badge">✋</div>}
-                                    <div className="peer-label">Participant</div>
+                                    <div className="peer-label">{peersStatus[id]?.username || 'Participant'}</div>
                                 </div>
                             ))}
                         </div>
@@ -930,18 +972,18 @@ function App() {
                         {/* If peers exist, show local as small PiP. If alone, show local in full grid. */}
                         <div className={`video-wrapper local ${peerIds.length > 0 ? 'pip' : ''} ${isScreenSharing ? 'screen-share' : ''}`} onClick={() => togglePin(myId)}>
                             <video ref={myVideoRef} autoPlay muted playsInline style={{ opacity: (isVideoOff && !isScreenSharing) ? 0 : 1 }} />
-                            {(isVideoOff && !isScreenSharing) && <div className="initials-avatar">{roomId.charAt(0).toUpperCase()}</div>}
+                            {(isVideoOff && !isScreenSharing) && <div className="initials-avatar">{(username || 'You').substring(0, 2).toUpperCase()}</div>}
                             {isHandRaised && <div className="hand-badge">✋</div>}
                             <div className="peer-label">
                                 {isMuted ? <MicOff size={14} color="#ea4335" /> : <Mic size={14} />}
-                                You {isScreenSharing ? '(Screen)' : ''}
+                                {username || 'You'} {isScreenSharing ? '(Screen)' : ''}
                             </div>
                         </div>
                         {peerIds.map(id => (
                             <div key={id} className="video-wrapper" onClick={() => togglePin(id)}>
                                 <VideoComponent stream={peers[id]} status={peersStatus[id]} isSpeaking={id === activeSpeakerId} />
                                 {peersStatus[id]?.isHandRaised && <div className="hand-badge">✋</div>}
-                                <div className="peer-label">Participant</div>
+                                <div className="peer-label">{peersStatus[id]?.username || 'Participant'}</div>
                             </div>
                         ))}
                     </>
@@ -1010,8 +1052,8 @@ function App() {
                         ) : sidebarTab === 'people' ? (
                             <div className="people-list">
                                 <div className="person-item">
-                                    <div className="p-avatar">Y</div>
-                                    <div className="p-info">You {isAdmin && '(Admin)'}</div>
+                                    <div className="p-avatar">{(username || 'You').charAt(0).toUpperCase()}</div>
+                                    <div className="p-info">{username || 'You'} {isAdmin && '(Admin)'}</div>
                                     <div className="p-controls">
                                         <button className={`pin-btn ${focusedPeerId === myId ? 'active' : ''}`} onClick={() => togglePin(myId)} title="Pin yourself locally">
                                             <Pin size={16} />
@@ -1025,9 +1067,9 @@ function App() {
                                 </div>
                                 {peerIds.map(id => (
                                     <div key={id} className="person-item">
-                                        <div className="p-avatar">{id.charAt(0).toUpperCase()}</div>
+                                        <div className="p-avatar">{(peersStatus[id]?.username || id).charAt(0).toUpperCase()}</div>
                                         <div className="p-info">
-                                            {id}
+                                            {peersStatus[id]?.username || id}
                                             {peersStatus[id]?.isHandRaised && <span style={{ marginLeft: 8 }}>✋</span>}
                                         </div>
                                         <div className="p-controls">
@@ -1116,7 +1158,9 @@ function VideoComponent({ stream, status, isSpeaking }: { stream: MediaStream, s
             <video ref={videoRef} autoPlay playsInline style={{ opacity: status?.isVideoOff ? 0 : 1, width: '100%', height: '100%', objectFit: 'cover' }} />
             {isSpeaking && <div className="speaking-indicator"></div>}
             {status?.isVideoOff && (
-                <div className="initials-avatar" style={{ fontSize: '2rem' }}>OFF</div>
+                <div className="initials-avatar" style={{ fontSize: '2rem' }}>
+                    {((status as any)?.username || 'User').substring(0, 2).toUpperCase()}
+                </div>
             )}
             {status?.isMuted && (
                 <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(234, 67, 53, 0.8)', borderRadius: '50%', padding: 4 }}>
