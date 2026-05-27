@@ -598,7 +598,16 @@ body {
 .panel-content {
   flex: 1;
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tab-details,
+.people-list,
+.settings-panel {
   overflow-y: auto;
+  flex: 1;
 }
 
 /* People List Controls */
