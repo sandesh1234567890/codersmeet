@@ -5,11 +5,11 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// Map of roomId -> Set of peerIds
+// Map of roomId -> { peers: Set of peerIds, adminId: string, globalPinnedId: string | null }
 const rooms = new Map();
 // Map of peerId -> roomId
 const peerToRoom = new Map();
-// Map of roomId -> presenterPeerId
+// Map of roomId -> presenterPeerId (screen share)
 const presenters = new Map();
 
 const PORT = process.env.PORT || 3040;
@@ -19,12 +19,12 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 });
 
 const peerServer = ExpressPeerServer(server, {
-    path: '/peerjs',
+    path: '/',
     allow_discovery: true,
     debug: true
 });
 
-app.use(peerServer);
+app.use('/peerjs', peerServer);
 
 // Health check/Ping endpoint to prevent sleep
 app.get('/ping', (req, res) => {
@@ -33,26 +33,42 @@ app.get('/ping', (req, res) => {
 
 // Discovery API for room-based mesh topology
 app.get('/rooms', (req, res) => {
-    const activeRooms = Array.from(rooms.entries()).map(([id, peers]) => ({
+    const activeRooms = Array.from(rooms.entries()).map(([id, data]) => ({
         id,
-        count: peers.size
+        count: data.peers.size
     }));
     console.log(`[DISCOVERY] Polling active rooms: ${activeRooms.length} found`);
     res.json(activeRooms);
 });
 
-app.get('/peers/:roomId', (req, res) => {
+app.get('/room-info/:roomId', (req, res) => {
     const roomId = req.params.roomId;
-    const roomPeers = rooms.get(roomId);
-    const presenterId = presenters.get(roomId) || null;
-
-    if (roomPeers) {
+    const room = rooms.get(roomId);
+    if (room) {
         res.json({
-            peers: Array.from(roomPeers),
-            presenterId
+            adminId: room.adminId,
+            globalPinnedId: room.globalPinnedId,
+            presenterId: presenters.get(roomId) || null
         });
     } else {
-        res.json({ peers: [], presenterId: null });
+        res.status(404).json({ error: "Room not found" });
+    }
+});
+
+app.get('/peers/:roomId', (req, res) => {
+    const roomId = req.params.roomId;
+    const room = rooms.get(roomId);
+    const presenterId = presenters.get(roomId) || null;
+
+    if (room) {
+        res.json({
+            peers: Array.from(room.peers),
+            presenterId,
+            adminId: room.adminId,
+            globalPinnedId: room.globalPinnedId
+        });
+    } else {
+        res.json({ peers: [], presenterId: null, adminId: null, globalPinnedId: null });
     }
 });
 
@@ -70,22 +86,37 @@ app.post('/stop-present/:roomId', (req, res) => {
     res.sendStatus(200);
 });
 
+app.post('/set-pin/:roomId/:peerId', (req, res) => {
+    const { roomId, peerId } = req.params;
+    const room = rooms.get(roomId);
+    if (room) {
+        // In a real app, verify requester is admin. Here we trust the UI.
+        room.globalPinnedId = (peerId === 'none' ? null : peerId);
+        console.log(`[PIN] Global pin in ${roomId} set to ${peerId}`);
+        res.sendStatus(200);
+    } else {
+        res.status(404).send("Room not found");
+    }
+});
+
 peerServer.on('connection', (client) => {
     const id = client.getId();
     console.log(`Client connected to signaling: ${id}`);
-
-    // Note: We don't know the room yet. 
-    // The client will need to "announce" their room via a separate call or we rely on the discovery ID.
-    // However, in a simple mesh, the client can just tell the server its room when it joins.
 });
 
 app.post('/join/:roomId/:peerId', (req, res) => {
     const { roomId, peerId } = req.params;
 
     if (!rooms.has(roomId)) {
-        rooms.set(roomId, new Set());
+        rooms.set(roomId, {
+            peers: new Set(),
+            adminId: peerId, // First one to join is admin
+            globalPinnedId: null
+        });
+        console.log(`[ADMIN] Peer ${peerId} is the admin of room ${roomId}`);
     }
-    rooms.get(roomId).add(peerId);
+    
+    rooms.get(roomId).peers.add(peerId);
     peerToRoom.set(peerId, roomId);
 
     console.log(`[JOIN] Peer ${peerId} joined room ${roomId}`);
@@ -100,14 +131,25 @@ peerServer.on('disconnect', (client) => {
     console.log(`[LEAVE] Client disconnected: ${id} from room ${roomId}`);
 
     if (roomId && rooms.has(roomId)) {
-        rooms.get(roomId).delete(id);
+        const room = rooms.get(roomId);
+        room.peers.delete(id);
+        
         if (presenters.get(roomId) === id) {
             presenters.delete(roomId);
         }
-        if (rooms.get(roomId).size === 0) {
+        
+        if (room.globalPinnedId === id) {
+            room.globalPinnedId = null;
+        }
+
+        if (room.peers.size === 0) {
             console.log(`[CLEANUP] Room ${roomId} is now empty. Removing.`);
             rooms.delete(roomId);
             presenters.delete(roomId);
+        } else if (room.adminId === id) {
+            // Assign next available peer as admin
+            room.adminId = Array.from(room.peers)[0];
+            console.log(`[ADMIN] New admin for ${roomId}: ${room.adminId}`);
         }
     }
     peerToRoom.delete(id);

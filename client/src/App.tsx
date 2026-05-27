@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import Peer from 'peerjs'; // Vercel Redeps v1
 import {
     Video,
@@ -17,7 +17,9 @@ import {
     X,
     Plus,
     Keyboard,
-    Hash
+    Hash,
+    Pin,
+    HandIcon
 } from 'lucide-react';
 import './index.css';
 
@@ -40,9 +42,9 @@ const SCREEN_CONSTRAINTS = {
 
 const PEER_PORT = 3040;
 const PEER_HOST = window.location.hostname;
-// HARD FALLBACK: Your specific Render URL to ensure it works even if ENV is missing
-const RENDER_URL = "https://codersmeet-bk.onrender.com";
-const SIGNALING_URL = (import.meta as any).env.VITE_SIGNALING_URL || (PEER_HOST.includes('localhost') ? `http://${PEER_HOST}:${PEER_PORT}` : RENDER_URL);
+// The environment variable VITE_SIGNALING_URL should be set in production (e.g., Vercel)
+const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 
+    (PEER_HOST.includes('localhost') ? `http://${PEER_HOST}:${PEER_PORT}` : '');
 
 // Helper to parse PeerJS config from URL
 const getPeerConfig = () => {
@@ -85,6 +87,14 @@ function App() {
     const [sidebarTab, setSidebarTab] = useState<'details' | 'people' | 'settings' | 'chat'>('details');
     const [peerError, setPeerError] = useState<string | null>(null);
     const [showControls, setShowControls] = useState(true);
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [globalPinnedId, setGlobalPinnedId] = useState<string | null>(null);
+    const [isHandRaised, setIsHandRaised] = useState(false);
+    const [peersStatus, setPeersStatus] = useState<{ [key: string]: { isMuted: boolean, isVideoOff: boolean, isHandRaised: boolean } }>({});
+    const [messages, setMessages] = useState<{ sender: string, text: string, time: string, isMe: boolean }[]>([]);
+    const [chatInput, setChatInput] = useState('');
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
 
     const peerRef = useRef<Peer | null>(null);
     const myVideoRef = useRef<HTMLVideoElement>(null);
@@ -92,11 +102,55 @@ function App() {
     const screenStreamRef = useRef<MediaStream | null>(null);
     const myStreamRef = useRef<MediaStream | null>(null);
     const controlsTimerRef = useRef<any>(null);
+    const dataConnectionsRef = useRef<{ [key: string]: any }>({});
+    const audioAnalysersRef = useRef<{ [key: string]: { analyser: AnalyserNode, interval: any } }>({});
 
     // Sync ref with state
     useEffect(() => {
         myStreamRef.current = myStream;
     }, [myStream]);
+
+    const startAudioMonitoring = useCallback((peerId: string, stream: MediaStream) => {
+        if (!stream || stream.getAudioTracks().length === 0) return;
+        
+        try {
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            const interval = setInterval(() => {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+                const average = sum / bufferLength;
+
+                if (average > 30) { // Volume threshold
+                    setActiveSpeakerId(peerId);
+                    // Reset after 2 seconds of silence
+                    if ((window as any).speakerResetTimeout) clearTimeout((window as any).speakerResetTimeout);
+                    (window as any).speakerResetTimeout = setTimeout(() => {
+                        setActiveSpeakerId(prev => prev === peerId ? null : prev);
+                    }, 2000);
+                }
+            }, 300);
+
+            audioAnalysersRef.current[peerId] = { analyser, interval };
+        } catch (e) {
+            console.error("Audio monitor failed", e);
+        }
+    }, [setActiveSpeakerId]);
+
+    const stopAudioMonitoring = useCallback((peerId: string) => {
+        if (audioAnalysersRef.current[peerId]) {
+            clearInterval(audioAnalysersRef.current[peerId].interval);
+            delete audioAnalysersRef.current[peerId];
+        }
+    }, []);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -187,6 +241,62 @@ function App() {
             }
         });
 
+        function handleIncomingData(senderId: string, data: any) {
+            if (!data || !data.type) return;
+            switch (data.type) {
+                case 'STATUS_UPDATE':
+                    setPeersStatus(prev => ({
+                        ...prev,
+                        [senderId]: data.status
+                    }));
+                    break;
+                case 'ADMIN_COMMAND':
+                    if (data.command === 'MUTE') {
+                        setIsMuted(true);
+                    } else if (data.command === 'TOGGLE_VIDEO') {
+                        setIsVideoOff(prev => !prev);
+                    } else if (data.command === 'TERMINATE') {
+                        alert("Meeting terminated by admin.");
+                        window.location.reload();
+                    }
+                    break;
+                case 'GLOBAL_PIN':
+                    setGlobalPinnedId(data.targetId === 'none' ? null : data.targetId);
+                    break;
+                case 'CHAT_MESSAGE':
+                    const newMsg = {
+                        sender: senderId,
+                        text: data.text,
+                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        isMe: false
+                    };
+                    setMessages(prev => [...prev, newMsg]);
+                    if (sidebarTab !== 'chat' || !isSidebarOpen) {
+                        setUnreadCount(prev => prev + 1);
+                    }
+                    break;
+            }
+        }
+
+        function setupDataConnection(conn: any) {
+            if (!conn) return;
+            conn.on('open', () => {
+                console.log("Data connection open with:", conn.peer);
+                dataConnectionsRef.current[conn.peer] = conn;
+                // Send current status
+                conn.send({
+                    type: 'STATUS_UPDATE',
+                    status: { isMuted, isVideoOff, isHandRaised }
+                });
+            });
+            conn.on('data', (data: any) => {
+                handleIncomingData(conn.peer, data);
+            });
+            conn.on('close', () => {
+                delete dataConnectionsRef.current[conn.peer];
+            });
+        }
+
         peer.on('open', (id) => {
             setMyId(id);
             setIsPeerReady(true);
@@ -202,36 +312,84 @@ function App() {
         peer.on('call', async (call) => {
             console.log('Incoming call from:', call.peer);
             let currentStream = myStreamRef.current;
-
-            // Auto-request media if we don't have it yet
             if (!currentStream) {
-                console.log("[PEER] Auto-requesting media for incoming call...");
                 currentStream = await requestMediaAccess();
             }
-
             if (currentStream) {
                 call.answer(currentStream);
-                call.on('stream', (userVideoStream: MediaStream) => {
-                    addPeerStream(call.peer, userVideoStream);
+                call.on('stream', (remoteStream: MediaStream) => {
+                    addPeerStream(call.peer, remoteStream);
+                    startAudioMonitoring(call.peer, remoteStream);
                 });
                 callsRef.current[call.peer] = call;
             } else {
-                console.warn('Answering call without local stream (Access Denied)');
                 call.answer();
             }
         });
 
+        peer.on('connection', (conn) => {
+            setupDataConnection(conn);
+        });
+
         peerRef.current = peer;
+        (window as any).setupDataConnection = setupDataConnection; // Temporary export for connectToNewUser
+
         return () => {
             peer.destroy();
-            if (myStreamRef.current) {
-                myStreamRef.current.getTracks().forEach(t => {
-                    t.stop();
-                    t.enabled = false;
-                });
-            }
+            Object.values(dataConnectionsRef.current).forEach((conn: any) => conn.close());
         };
     }, []);
+
+    const sendStatusUpdate = () => {
+        const payload = {
+            type: 'STATUS_UPDATE',
+            status: { isMuted, isVideoOff, isHandRaised }
+        };
+        Object.values(dataConnectionsRef.current).forEach((conn: any) => {
+            conn.send(payload);
+        });
+    };
+
+    const broadcastAdminCommand = (targetId: string, command: string) => {
+        if (!isAdmin) return;
+        const payload = { type: 'ADMIN_COMMAND', command, targetId };
+        if (targetId === 'all') {
+            Object.values(dataConnectionsRef.current).forEach((conn: any) => conn.send(payload));
+        } else if (dataConnectionsRef.current[targetId]) {
+            dataConnectionsRef.current[targetId].send(payload);
+        }
+    };
+
+    const broadcastGlobalPin = async (targetId: string | null) => {
+        if (!isAdmin) return;
+        const id = targetId || 'none';
+        try {
+            await fetch(`${SIGNALING_URL}/set-pin/${roomId}/${id}`, { method: 'POST' });
+            const payload = { type: 'GLOBAL_PIN', targetId: id };
+            Object.values(dataConnectionsRef.current).forEach((conn: any) => conn.send(payload));
+            setGlobalPinnedId(targetId);
+        } catch (err) {
+            console.error("Failed to broadcast global pin", err);
+        }
+    };
+
+    const sendChatMessage = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (!chatInput.trim()) return;
+
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const payload = { type: 'CHAT_MESSAGE', text: chatInput };
+        
+        Object.values(dataConnectionsRef.current).forEach((conn: any) => conn.send(payload));
+        
+        setMessages(prev => [...prev, {
+            sender: 'You',
+            text: chatInput,
+            time: timestamp,
+            isMe: true
+        }]);
+        setChatInput('');
+    };
 
     const addPeerStream = (peerId: string, stream: MediaStream) => {
         setPeers(prev => ({ ...prev, [peerId]: stream }));
@@ -305,6 +463,7 @@ function App() {
                     Object.keys(next).forEach(id => {
                         if (!peerList.includes(id)) {
                             delete next[id];
+                            stopAudioMonitoring(id);
                             if (callsRef.current[id]) {
                                 callsRef.current[id].close();
                                 delete callsRef.current[id];
@@ -341,16 +500,69 @@ function App() {
 
         await fetchPeers();
         const pollInterval = setInterval(fetchPeers, 3000);
-        return () => clearInterval(pollInterval);
+
+        // Fetch Room Info (Admin + Global Pin)
+        const fetchRoomInfo = async () => {
+            try {
+                const res = await fetch(`${SIGNALING_URL}/room-info/${idToJoin}`);
+                if (!res.ok) {
+                    console.warn(`[ROOM-INFO] Failed to fetch: ${res.status}. URL: ${res.url}`);
+                    return;
+                }
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const data = await res.json();
+                    setIsAdmin(data.adminId === myId);
+                    setGlobalPinnedId(data.globalPinnedId);
+                    setPresenterId(data.presenterId);
+                } else {
+                    const text = await res.text();
+                    console.error(`[ROOM-INFO] Expected JSON but got ${contentType}. Body snippet: ${text.substring(0, 100)}`);
+                }
+            } catch (err) {
+                console.error("Room info fetch failed", err);
+            }
+        };
+        await fetchRoomInfo();
+        const infoInterval = setInterval(fetchRoomInfo, 5000);
+
+        return () => {
+            clearInterval(pollInterval);
+            clearInterval(infoInterval);
+        };
     };
 
     const connectToNewUser = (userId: string, stream: MediaStream) => {
         if (!peerRef.current) return;
+        
+        // 1. Establish Media Call
         const call = peerRef.current.call(userId, stream);
         call.on('stream', (userVideoStream) => {
             addPeerStream(userId, userVideoStream);
         });
         callsRef.current[userId] = call;
+
+        // 2. Establish Data Connection
+        const conn = peerRef.current.connect(userId);
+        if ((window as any).setupDataConnection) {
+            (window as any).setupDataConnection(conn);
+        }
+    };
+
+    useEffect(() => {
+        if (isJoined) sendStatusUpdate();
+    }, [isMuted, isVideoOff, isHandRaised]);
+
+    const toggleHandRaise = () => {
+        setIsHandRaised(prev => !prev);
+    };
+
+    const terminateMeeting = () => {
+        if (!isAdmin) return;
+        if (confirm("Are you sure you want to terminate meeting for everyone?")) {
+            broadcastAdminCommand('all', 'TERMINATE');
+            leaveCall();
+        }
     };
 
     const toggleMute = async () => {
@@ -595,7 +807,7 @@ function App() {
                         )}
 
                         <div className="landing-footer">
-                            <p>Engineered by <strong>Sandesh Suroshe</strong> for developer community.</p>
+                            <p>Engineered by <strong>Sandesh Surwase</strong> for developer community.</p>
                         </div>
                     </div>
 
@@ -632,12 +844,13 @@ function App() {
     const peerIds = Object.keys(peers);
     const totalParticipants = peerIds.length + 1;
     const isPresentationActive = presenterId !== null;
-    const effectiveFocusId = presenterId || focusedPeerId;
-    const isFocusActive = effectiveFocusId !== null;
-
     const togglePin = (id: string | null) => {
         setFocusedPeerId(prev => prev === id ? null : id);
     };
+
+    const isGlobalFocusActive = globalPinnedId !== null;
+    const effectiveFocusId = globalPinnedId || presenterId || focusedPeerId || activeSpeakerId;
+    const isFocusActive = effectiveFocusId !== null;
 
     return (
         <div className="app-container" data-layout={isFocusActive ? 'presentation' : 'grid'}>
@@ -689,8 +902,8 @@ function App() {
                                 </div>
                             ) : (
                                 <div className="video-wrapper" onClick={() => togglePin(null)}>
-                                    <VideoComponent stream={peers[effectiveFocusId!]} />
-                                    <div className="peer-label">{presenterId ? "Presenting" : "Pinned"}</div>
+                                    <VideoComponent stream={peers[effectiveFocusId!]} isSpeaking={effectiveFocusId === activeSpeakerId} />
+                                    <div className="peer-label">{presenterId ? "Presenting" : (effectiveFocusId === activeSpeakerId && !globalPinnedId) ? "Speaking" : "Pinned"}</div>
                                 </div>
                             )}
                         </div>
@@ -698,13 +911,15 @@ function App() {
                             {effectiveFocusId !== myId && (
                                 <div className={`video-wrapper local ${isScreenSharing ? 'screen-share' : ''}`} onClick={() => togglePin(myId)}>
                                     <video ref={myVideoRef} autoPlay muted playsInline style={{ opacity: isVideoOff ? 0 : 1 }} />
-                                    {isVideoOff && <div className="initials-avatar">{roomId.charAt(0).toUpperCase()}</div>}
+                                    {(isVideoOff && !isScreenSharing) && <div className="initials-avatar">{roomId.charAt(0).toUpperCase()}</div>}
+                                    {isHandRaised && <div className="hand-badge">✋</div>}
                                     <div className="peer-label">You</div>
                                 </div>
                             )}
                             {peerIds.filter(id => id !== effectiveFocusId).map(id => (
                                 <div key={id} className="video-wrapper" onClick={() => togglePin(id)}>
-                                    <VideoComponent stream={peers[id]} />
+                                    <VideoComponent stream={peers[id]} status={peersStatus[id]} isSpeaking={id === activeSpeakerId} />
+                                    {peersStatus[id]?.isHandRaised && <div className="hand-badge">✋</div>}
                                     <div className="peer-label">Participant</div>
                                 </div>
                             ))}
@@ -714,8 +929,9 @@ function App() {
                     <>
                         {/* If peers exist, show local as small PiP. If alone, show local in full grid. */}
                         <div className={`video-wrapper local ${peerIds.length > 0 ? 'pip' : ''} ${isScreenSharing ? 'screen-share' : ''}`} onClick={() => togglePin(myId)}>
-                            <video ref={myVideoRef} autoPlay muted playsInline style={{ opacity: isVideoOff && !isScreenSharing ? 0 : 1 }} />
-                            {isVideoOff && !isScreenSharing && <div className="initials-avatar">{roomId.charAt(0).toUpperCase()}</div>}
+                            <video ref={myVideoRef} autoPlay muted playsInline style={{ opacity: (isVideoOff && !isScreenSharing) ? 0 : 1 }} />
+                            {(isVideoOff && !isScreenSharing) && <div className="initials-avatar">{roomId.charAt(0).toUpperCase()}</div>}
+                            {isHandRaised && <div className="hand-badge">✋</div>}
                             <div className="peer-label">
                                 {isMuted ? <MicOff size={14} color="#ea4335" /> : <Mic size={14} />}
                                 You {isScreenSharing ? '(Screen)' : ''}
@@ -723,7 +939,8 @@ function App() {
                         </div>
                         {peerIds.map(id => (
                             <div key={id} className="video-wrapper" onClick={() => togglePin(id)}>
-                                <VideoComponent stream={peers[id]} />
+                                <VideoComponent stream={peers[id]} status={peersStatus[id]} isSpeaking={id === activeSpeakerId} />
+                                {peersStatus[id]?.isHandRaised && <div className="hand-badge">✋</div>}
                                 <div className="peer-label">Participant</div>
                             </div>
                         ))}
@@ -734,10 +951,14 @@ function App() {
             <footer className={`footer-controls ${!showControls ? 'hidden' : ''}`}>
                 <div className="footer-left-info">{roomId}</div>
                 <div className="footer-center">
-                    <button className={`circle-btn ${isMuted ? 'off' : ''}`} onClick={toggleMute}>{isMuted ? <MicOff size={22} /> : <Mic size={22} />}</button>
-                    <button className={`circle-btn ${isVideoOff ? 'off' : ''}`} onClick={toggleVideo}>{isVideoOff ? <VideoOff size={22} /> : <Video size={22} />}</button>
-                    <button className={`circle-btn ${isScreenSharing ? 'active' : ''}`} onClick={toggleScreenShare}>{isScreenSharing ? <MonitorOff size={22} /> : <ScreenShare size={22} />}</button>
-                    <button className="circle-btn danger" onClick={leaveCall}><PhoneOff size={22} /></button>
+                    <button className={`circle-btn ${isMuted ? 'off' : ''}`} onClick={toggleMute} title="Mute/Unmute">{isMuted ? <MicOff size={22} /> : <Mic size={22} />}</button>
+                    <button className={`circle-btn ${isVideoOff ? 'off' : ''}`} onClick={toggleVideo} title="Camera On/Off">{isVideoOff ? <VideoOff size={22} /> : <Video size={22} />}</button>
+                    <button className={`circle-btn ${isHandRaised ? 'active' : ''}`} onClick={toggleHandRaise} title="Raise Hand">{isHandRaised ? <HandIcon size={22} fill={isHandRaised ? "#ffba08" : "none"} /> : <HandIcon size={22} />}</button>
+                    <button className={`circle-btn ${isScreenSharing ? 'active' : ''}`} onClick={toggleScreenShare} title="Present Screen">{isScreenSharing ? <MonitorOff size={22} /> : <ScreenShare size={22} />}</button>
+                    <button className="circle-btn danger" onClick={leaveCall} title="Leave Meeting"><PhoneOff size={22} /></button>
+                    {isAdmin && (
+                        <button className="circle-btn danger" onClick={terminateMeeting} title="Terminate Meeting for All" style={{ background: 'var(--accent-danger-hover)' }}><X size={22} /></button>
+                    )}
                 </div>
                 <div className="footer-right-actions">
                     <button className="icon-btn" onClick={() => { setSidebarTab('details'); setIsSidebarOpen(!isSidebarOpen); }}><Info size={22} /></button>
@@ -745,8 +966,9 @@ function App() {
                         <Users size={22} />
                         <span className="badge">{totalParticipants}</span>
                     </button>
-                    <button className="icon-btn" onClick={() => { setSidebarTab('chat'); setIsSidebarOpen(!isSidebarOpen); }}>
+                    <button className="icon-btn" onClick={() => { setSidebarTab('chat'); setIsSidebarOpen(!isSidebarOpen); setUnreadCount(0); }}>
                         <MessageSquare size={22} />
+                        {unreadCount > 0 && <span className="badge pulse">{unreadCount}</span>}
                     </button>
                     <button className="icon-btn" onClick={() => { setSidebarTab('settings'); setIsSidebarOpen(!isSidebarOpen); }}>
                         <Settings size={22} />
@@ -789,25 +1011,76 @@ function App() {
                             <div className="people-list">
                                 <div className="person-item">
                                     <div className="p-avatar">Y</div>
-                                    <div className="p-info">You</div>
-                                    <button className={`pin-btn ${focusedPeerId === myId ? 'active' : ''}`} onClick={() => togglePin(myId)}>
-                                        <Plus size={16} />
-                                    </button>
+                                    <div className="p-info">You {isAdmin && '(Admin)'}</div>
+                                    <div className="p-controls">
+                                        <button className={`pin-btn ${focusedPeerId === myId ? 'active' : ''}`} onClick={() => togglePin(myId)} title="Pin yourself locally">
+                                            <Pin size={16} />
+                                        </button>
+                                        {isAdmin && (
+                                            <button className={`pin-btn ${globalPinnedId === myId ? 'active spotlight' : ''}`} onClick={() => broadcastGlobalPin(globalPinnedId === myId ? null : myId)} title="Spotlight yourself for everyone">
+                                                <Users size={16} color={globalPinnedId === myId ? "gold" : "currentColor"} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 {peerIds.map(id => (
                                     <div key={id} className="person-item">
                                         <div className="p-avatar">{id.charAt(0).toUpperCase()}</div>
-                                        <div className="p-info">{id}</div>
-                                        <button className={`pin-btn ${focusedPeerId === id ? 'active' : ''}`} onClick={() => togglePin(id)}>
-                                            <Plus size={16} />
-                                        </button>
+                                        <div className="p-info">
+                                            {id}
+                                            {peersStatus[id]?.isHandRaised && <span style={{ marginLeft: 8 }}>✋</span>}
+                                        </div>
+                                        <div className="p-controls">
+                                            {isAdmin && (
+                                                <>
+                                                    <button className="p-con-btn" onClick={() => broadcastAdminCommand(id, 'MUTE')} title="Remote Mute">
+                                                        {peersStatus[id]?.isMuted ? <MicOff size={14} color="#ea4335" /> : <Mic size={14} />}
+                                                    </button>
+                                                    <button className="p-con-btn" onClick={() => broadcastAdminCommand(id, 'TOGGLE_VIDEO')} title="Remote Toggle Video">
+                                                        {peersStatus[id]?.isVideoOff ? <VideoOff size={14} color="#ea4335" /> : <Video size={14} />}
+                                                    </button>
+                                                </>
+                                            )}
+                                            <button className={`pin-btn ${focusedPeerId === id ? 'active' : ''}`} onClick={() => togglePin(id)} title="Pin locally">
+                                                <Pin size={16} />
+                                            </button>
+                                            {isAdmin && (
+                                                <button className={`pin-btn ${globalPinnedId === id ? 'active spotlight' : ''}`} onClick={() => broadcastGlobalPin(globalPinnedId === id ? null : id)} title="Spotlight for everyone">
+                                                    <Users size={16} color={globalPinnedId === id ? "gold" : "currentColor"} />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         ) : sidebarTab === 'chat' ? (
-                            <div className="chat-placeholder">
-                                <MessageSquare size={48} opacity={0.2} />
-                                <p>Chat feature coming soon</p>
+                            <div className="chat-container">
+                                <div className="chat-messages">
+                                    {messages.map((msg, i) => (
+                                        <div key={i} className={`chat-bubble ${msg.isMe ? 'me' : 'them'}`}>
+                                            <div className="chat-meta">
+                                                <span className="chat-sender">{msg.isMe ? 'You' : msg.sender.substring(0, 6)}</span>
+                                                <span className="chat-time">{msg.time}</span>
+                                            </div>
+                                            <div className="chat-text">{msg.text}</div>
+                                        </div>
+                                    ))}
+                                    {messages.length === 0 && (
+                                        <div className="chat-empty">
+                                            <MessageSquare size={48} opacity={0.1} />
+                                            <p>No messages yet. Start the conversation!</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <form className="chat-input-area" onSubmit={sendChatMessage}>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Type a message..." 
+                                        value={chatInput}
+                                        onChange={(e) => setChatInput(e.target.value)}
+                                    />
+                                    <button type="submit" disabled={!chatInput.trim()}>Send</button>
+                                </form>
                             </div>
                         ) : (
                             <div className="settings-panel">
@@ -832,12 +1105,26 @@ function App() {
     );
 }
 
-function VideoComponent({ stream }: { stream: MediaStream }) {
+function VideoComponent({ stream, status, isSpeaking }: { stream: MediaStream, status?: { isMuted: boolean, isVideoOff: boolean }, isSpeaking?: boolean }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     useEffect(() => {
         if (videoRef.current && stream) videoRef.current.srcObject = stream;
     }, [stream]);
-    return <video ref={videoRef} autoPlay playsInline />;
+
+    return (
+        <div className={`video-container-inner ${isSpeaking ? 'speaking' : ''}`} style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <video ref={videoRef} autoPlay playsInline style={{ opacity: status?.isVideoOff ? 0 : 1, width: '100%', height: '100%', objectFit: 'cover' }} />
+            {isSpeaking && <div className="speaking-indicator"></div>}
+            {status?.isVideoOff && (
+                <div className="initials-avatar" style={{ fontSize: '2rem' }}>OFF</div>
+            )}
+            {status?.isMuted && (
+                <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(234, 67, 53, 0.8)', borderRadius: '50%', padding: 4 }}>
+                    <MicOff size={14} color="white" />
+                </div>
+            )}
+        </div>
+    );
 }
 
 export default App;
