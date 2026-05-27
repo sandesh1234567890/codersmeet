@@ -95,7 +95,7 @@ function App() {
     const [chatInput, setChatInput] = useState('');
     const [unreadCount, setUnreadCount] = useState(0);
     const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
-    const [username, setUsername] = useState(() => localStorage.getItem('codersmeet_username') || '');
+    const [username, setUsername] = useState('');
     const [nameError, setNameError] = useState(false);
 
     const usernameRef = useRef(username);
@@ -863,7 +863,6 @@ function App() {
                                     value={username}
                                     onChange={(e) => {
                                         setUsername(e.target.value);
-                                        localStorage.setItem('codersmeet_username', e.target.value);
                                         if (e.target.value.trim()) setNameError(false);
                                     }}
                                     className="name-input"
